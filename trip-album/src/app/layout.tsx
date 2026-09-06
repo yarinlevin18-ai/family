@@ -1,46 +1,48 @@
-import type { Metadata } from "next";
-import Link from "next/link";
-import { Geist, Geist_Mono } from "next/font/google";
+import type { Metadata, Viewport } from "next";
+import { Heebo } from "next/font/google";
 import "./globals.css";
+import { Nav } from "@/components/nav";
+import { ToastProvider } from "@/components/toast";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+const heebo = Heebo({
+  variable: "--font-heebo",
+  subsets: ["hebrew", "latin"],
+  weight: ["300", "400", "500", "600", "700", "800", "900"],
 });
 
 export const metadata: Metadata = {
-  title: "Trip Album",
-  description: "Shared photo and video album for the trip",
+  title: {
+    default: "האלבום שלנו",
+    template: "%s · האלבום שלנו",
+  },
+  description: "אלבום תמונות וסרטונים משותף מהטיול. בלי חשבון, בלי סיבוכים.",
+  openGraph: {
+    title: "האלבום שלנו",
+    description: "כל הרגעים מהטיול, במקום אחד.",
+    locale: "he_IL",
+    type: "website",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#0b0a10",
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col bg-zinc-50 text-zinc-900">
-        <header className="border-b border-zinc-200 bg-white">
-          <nav className="mx-auto flex max-w-6xl items-center gap-6 px-4 py-3">
-            <Link href="/" className="font-semibold">
-              Trip Album
-            </Link>
-            <Link href="/upload" className="text-sm hover:underline">
-              Upload
-            </Link>
-            <Link href="/gallery" className="text-sm hover:underline">
-              Gallery
-            </Link>
-          </nav>
-        </header>
-        <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">
-          {children}
-        </main>
+    <html lang="he" dir="rtl" className={`${heebo.variable} h-full`}>
+      <body className="flex min-h-full flex-col font-sans">
+        <ToastProvider>
+          <Nav />
+          <main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-16 pt-6 sm:px-6">
+            {children}
+          </main>
+          <footer className="px-4 pb-6 text-center text-xs text-mist-3">
+            נבנה באהבה לטיול שלנו · כל התמונות נשמרות בענן
+          </footer>
+        </ToastProvider>
       </body>
     </html>
   );
