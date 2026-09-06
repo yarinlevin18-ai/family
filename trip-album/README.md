@@ -17,14 +17,14 @@ The publishable key is safe to ship to the browser; row-level security and the b
 
 ## Local run
 
-1. Copy `.env.local.example` to `.env.local` and paste the two values above.
+1. Optional: copy `.env.local.example` to `.env.local`. The app already defaults to the values above when the variables are unset.
 2. `npm install && npm run dev`
 
 ## Setting up a fresh project instead
 
 1. Create a Supabase project.
 2. In the SQL editor, run `supabase/migrations/0001_photos.sql`. It creates the `photos` table, the public `photos` storage bucket, and the anon read/insert/update policies the app needs.
-3. Fill `.env.local` with that project's URL and publishable (or legacy anon) key.
+3. Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` (in `.env.local` or Vercel) to that project's URL and publishable key; they override the built-in defaults.
 
 ## Routes
 
