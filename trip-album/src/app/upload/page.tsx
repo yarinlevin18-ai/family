@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Dropzone } from "@/components/dropzone";
 import { burstConfetti } from "@/components/confetti";
-import { Check, Alert, Spinner, Trash, Upload, Grid } from "@/components/icons";
+import { Check, Alert, Spinner, Trash, Upload, Grid, Video } from "@/components/icons";
 import { useToast } from "@/components/toast";
 import { formatBytes, mediaTypeOf } from "@/lib/format";
-import { loadSavedName, saveName, uploadPhoto } from "@/lib/photos";
+import { NetworkError, loadSavedName, saveName, uploadPhoto } from "@/lib/photos";
 
 type Item = {
   id: string;
@@ -25,6 +25,40 @@ export default function UploadPage() {
   const [name, setName] = useState("");
   const [items, setItems] = useState<Item[]>([]);
   const [busy, setBusy] = useState(false);
+  const wakeLock = useRef<WakeLockSentinel | null>(null);
+
+  // Keep the screen on and warn before leaving while an upload batch is running.
+  useEffect(() => {
+    if (!busy) return;
+    const onLeave = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener("beforeunload", onLeave);
+
+    let released = false;
+    const acquire = async () => {
+      try {
+        if ("wakeLock" in navigator && document.visibilityState === "visible") {
+          wakeLock.current = await navigator.wakeLock.request("screen");
+        }
+      } catch {
+        /* not supported or denied */
+      }
+    };
+    const onVisible = () => {
+      if (!released && document.visibilityState === "visible") void acquire();
+    };
+    void acquire();
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      released = true;
+      window.removeEventListener("beforeunload", onLeave);
+      document.removeEventListener("visibilitychange", onVisible);
+      wakeLock.current?.release().catch(() => {});
+      wakeLock.current = null;
+    };
+  }, [busy]);
 
   useEffect(() => {
     // Read after hydration so server and client render the same initial markup.
@@ -38,6 +72,7 @@ export default function UploadPage() {
   }, []);
 
   const pending = useMemo(() => items.filter((i) => i.status !== "done"), [items]);
+  const failed = useMemo(() => items.filter((i) => i.status === "error").length, [items]);
   const done = items.length - pending.length;
   const canSubmit = name.trim().length > 0 && pending.length > 0 && !busy;
 
@@ -85,7 +120,11 @@ export default function UploadPage() {
           patch(it.id, { status: "done" });
           ok++;
         } catch (e) {
-          patch(it.id, { status: "error", error: (e as Error).message });
+          const message =
+            e instanceof NetworkError
+              ? "החיבור נותק, לחצו שוב כדי להמשיך"
+              : (e as Error).message;
+          patch(it.id, { status: "error", error: message });
           failed++;
         }
       }
@@ -97,9 +136,9 @@ export default function UploadPage() {
       burstConfetti();
       toast("success", ok === 1 ? "הועלה בהצלחה! 🎉" : `${ok} קבצים הועלו בהצלחה! 🎉`);
     } else if (ok > 0) {
-      toast("info", `${ok} הועלו, ${failed} נכשלו`);
+      toast("info", `${ok} הועלו, ${failed} נכשלו. לחצו שוב כדי להשלים.`);
     } else if (failed > 0) {
-      toast("error", "ההעלאה נכשלה, נסו שוב");
+      toast("error", "ההעלאה נכשלה. בדקו את החיבור ולחצו שוב.");
     }
   }
 
@@ -142,10 +181,12 @@ export default function UploadPage() {
               >
                 <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-ink-3">
                   {mediaTypeOf(it.file) === "video" ? (
-                    <video src={it.preview} muted playsInline className="h-full w-full object-cover" />
+                    <span className="grid h-full w-full place-items-center text-mist-3">
+                      <Video />
+                    </span>
                   ) : (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={it.preview} alt="" className="h-full w-full object-cover" />
+                    <img src={it.preview} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
                   )}
                   {it.status === "uploading" && (
                     <span className="absolute inset-0 grid place-items-center bg-black/50">
@@ -203,7 +244,9 @@ export default function UploadPage() {
                 ? `מעלה… ${done}/${items.length}`
                 : done === items.length
                   ? "הכול הועלה ✨"
-                  : `${pending.length} ממתינים להעלאה`}
+                  : failed > 0
+                    ? `${done} הועלו · ${failed} נכשלו`
+                    : `${pending.length} ממתינים להעלאה`}
           </div>
           <div className="flex gap-2">
             {done > 0 && !busy && (
@@ -214,7 +257,13 @@ export default function UploadPage() {
             )}
             <button type="button" className="btn-primary" disabled={!canSubmit} onClick={submit}>
               {busy ? <Spinner /> : <Upload width={18} height={18} />}
-              {busy ? "מעלה…" : pending.length > 1 ? `העלאת ${pending.length} קבצים` : "העלאה"}
+              {busy
+                ? "מעלה…"
+                : failed > 0 && failed === pending.length
+                  ? `נסו שוב (${failed})`
+                  : pending.length > 1
+                    ? `העלאת ${pending.length} קבצים`
+                    : "העלאה"}
             </button>
           </div>
         </div>
@@ -230,7 +279,7 @@ export default function UploadPage() {
       </section>
 
       <p className="mt-5 text-center text-xs text-mist-3">
-        טיפ: השם נשמר במכשיר, כך שבפעם הבאה רק גוררים ומעלים.
+        טיפ: השאירו את המסך דלוק עד שההעלאה מסתיימת. אם החיבור נופל, האפליקציה ממתינה ומנסה שוב לבד.
       </p>
     </div>
   );

@@ -19,6 +19,50 @@ export async function setFavorite(id: string, value: boolean) {
   if (error) throw new Error(error.message);
 }
 
+export class NetworkError extends Error {
+  constructor(message = "החיבור לאינטרנט נותק") {
+    super(message);
+    this.name = "NetworkError";
+  }
+}
+
+/** supabase-js surfaces browser network failures as a generic "Failed to fetch". */
+function isNetworkFailure(e: unknown) {
+  const msg = e instanceof Error ? e.message : String(e);
+  return /failed to fetch|networkerror|load failed|network request failed|fetch failed/i.test(msg);
+}
+
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/** Resolve once the browser reports it is online again (or immediately). */
+function waitForOnline(timeoutMs = 60_000) {
+  if (typeof navigator === "undefined" || navigator.onLine) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    const done = () => {
+      window.removeEventListener("online", done);
+      resolve();
+    };
+    window.addEventListener("online", done);
+    setTimeout(done, timeoutMs);
+  });
+}
+
+/** Retry a step on network failures with backoff; other errors are thrown immediately. */
+async function withRetry<T>(step: () => Promise<T>, attempts = 5): Promise<T> {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      await waitForOnline();
+      return await step();
+    } catch (e) {
+      if (!isNetworkFailure(e)) throw e;
+      await sleep(Math.min(1000 * 2 ** i, 15_000));
+    }
+  }
+  throw new NetworkError();
+}
+
 export async function uploadPhoto(
   file: File,
   uploaderName: string,
@@ -26,27 +70,31 @@ export async function uploadPhoto(
 ): Promise<Photo> {
   const path = `${Date.now()}-${crypto.randomUUID()}-${safeFileName(file.name)}`;
 
-  const { error: uploadError } = await supabase.storage
-    .from(PHOTOS_BUCKET)
-    .upload(path, file, { contentType: file.type, upsert: false });
-  if (uploadError) throw new Error(uploadError.message);
+  await withRetry(async () => {
+    const { error } = await supabase.storage
+      .from(PHOTOS_BUCKET)
+      .upload(path, file, { contentType: file.type, upsert: true });
+    if (error) throw new Error(error.message);
+  });
 
   const {
     data: { publicUrl },
   } = supabase.storage.from(PHOTOS_BUCKET).getPublicUrl(path);
 
-  const { data, error } = await supabase
-    .from("photos")
-    .insert({
-      uploader_name: uploaderName,
-      url: publicUrl,
-      caption: caption.trim() || null,
-      media_type: mediaTypeOf(file),
-    })
-    .select(PHOTO_COLUMNS)
-    .single();
-  if (error) throw new Error(error.message);
-  return data as Photo;
+  return withRetry(async () => {
+    const { data, error } = await supabase
+      .from("photos")
+      .insert({
+        uploader_name: uploaderName,
+        url: publicUrl,
+        caption: caption.trim() || null,
+        media_type: mediaTypeOf(file),
+      })
+      .select(PHOTO_COLUMNS)
+      .single();
+    if (error) throw new Error(error.message);
+    return data as Photo;
+  });
 }
 
 /** Subscribe to live inserts/updates. Returns an unsubscribe function. */
