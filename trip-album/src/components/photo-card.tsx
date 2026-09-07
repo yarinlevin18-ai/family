@@ -12,6 +12,7 @@ export function PhotoCard({
   onOpen,
   onToggleFavorite,
   onDelete,
+  stackCount,
   fresh = false,
 }: {
   photo: Photo;
@@ -20,6 +21,8 @@ export function PhotoCard({
   onToggleFavorite: () => void;
   /** Present only when the viewer may delete this photo. */
   onDelete?: () => void;
+  /** When this card stands for a group of duplicates, how many it covers. */
+  stackCount?: number;
   fresh?: boolean;
 }) {
   return (
@@ -89,6 +92,16 @@ export function PhotoCard({
       >
         <Heart filled={photo.is_favorite} className={photo.is_favorite ? "animate-pop" : ""} />
       </button>
+
+      {stackCount && stackCount > 1 && (
+        <span
+          dir="ltr"
+          title={`עוד ${stackCount - 1} תמונות מאותו רגע`}
+          className="pointer-events-none absolute end-3 bottom-14 rounded-full bg-black/65 px-2.5 py-1 text-[11px] font-extrabold text-white ring-1 ring-white/20 backdrop-blur"
+        >
+          +{stackCount - 1}
+        </span>
+      )}
 
       <figcaption className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end gap-2.5 p-3">
         <Avatar name={photo.uploader_name} size="sm" />

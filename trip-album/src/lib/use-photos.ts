@@ -71,5 +71,9 @@ export function usePhotos(options?: { onLiveInsert?: (p: Photo) => void }) {
     }
   }, []);
 
-  return { photos, error, freshIds, toggleFavorite, removePhoto };
+  const patchPhotos = useCallback((update: (list: Photo[]) => Photo[]) => {
+    setPhotos((prev) => (prev ? update(prev) : prev));
+  }, []);
+
+  return { photos, error, freshIds, toggleFavorite, removePhoto, patchPhotos };
 }
