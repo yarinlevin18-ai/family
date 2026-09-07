@@ -1,13 +1,15 @@
 "use client";
 
-import { useDeferredValue, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Avatar } from "@/components/avatar";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Heart, ImageIcon, Play, Search, Upload, Video, X } from "@/components/icons";
 import { Lightbox } from "@/components/lightbox";
 import { PhotoCard } from "@/components/photo-card";
 import { useToast } from "@/components/toast";
 import { usePhotos } from "@/lib/use-photos";
+import { loadSavedName } from "@/lib/photos";
 import type { Photo } from "@/lib/types";
 
 type Filter = "all" | "favorites" | "image" | "video";
@@ -21,7 +23,7 @@ const FILTERS: { key: Filter; label: string; icon?: typeof Heart }[] = [
 
 export default function GalleryPage() {
   const toast = useToast();
-  const { photos, error, freshIds, toggleFavorite } = usePhotos({
+  const { photos, error, freshIds, toggleFavorite, removePhoto } = usePhotos({
     onLiveInsert: (p) => toast("info", `${p.uploader_name} העלה/תה משהו חדש`),
   });
 
@@ -30,7 +32,18 @@ export default function GalleryPage() {
   const [query, setQuery] = useState("");
   const [oldestFirst, setOldestFirst] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [myName, setMyName] = useState("");
+  const [toDelete, setToDelete] = useState<Photo | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const deferredQuery = useDeferredValue(query.trim().toLowerCase());
+
+  useEffect(() => {
+    // The name saved on the upload page decides which photos show a delete button.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMyName(loadSavedName().trim());
+  }, []);
+
+  const isMine = (p: Photo) => myName.length > 0 && p.uploader_name === myName;
 
   const uploaders = useMemo(() => {
     const counts = new Map<string, number>();
@@ -61,6 +74,21 @@ export default function GalleryPage() {
       await toggleFavorite(photo);
     } catch (e) {
       toast("error", `לא הצלחנו לעדכן: ${(e as Error).message}`);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!toDelete) return;
+    setDeleting(true);
+    try {
+      await removePhoto(toDelete, myName);
+      if (openId === toDelete.id) setOpenId(null);
+      toast("success", "התמונה נמחקה");
+      setToDelete(null);
+    } catch (e) {
+      toast("error", `המחיקה נכשלה: ${(e as Error).message}`);
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -203,6 +231,7 @@ export default function GalleryPage() {
               fresh={freshIds.has(photo.id)}
               onOpen={() => setOpenId(photo.id)}
               onToggleFavorite={() => onToggle(photo)}
+              onDelete={isMine(photo) ? () => setToDelete(photo) : undefined}
             />
           ))}
         </div>
@@ -215,6 +244,19 @@ export default function GalleryPage() {
           onClose={() => setOpenId(null)}
           onNavigate={(i) => setOpenId(visible[i].id)}
           onToggleFavorite={onToggle}
+          canDelete={isMine}
+          onDelete={(p) => setToDelete(p)}
+        />
+      )}
+
+      {toDelete && (
+        <ConfirmDialog
+          title="למחוק את התמונה?"
+          text={`היא תיעלם מהאלבום אצל כולם. ${toDelete.caption ? `"${toDelete.caption}"` : ""}`}
+          confirmLabel="מחיקה"
+          busy={deleting}
+          onConfirm={confirmDelete}
+          onCancel={() => !deleting && setToDelete(null)}
         />
       )}
     </div>

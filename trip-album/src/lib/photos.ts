@@ -97,6 +97,22 @@ export async function uploadPhoto(
   });
 }
 
+/**
+ * Delete a photo you uploaded. The database function only removes rows whose
+ * uploader_name matches; it returns the storage path so the file can go too.
+ */
+export async function deletePhoto(photo: Photo, uploaderName: string): Promise<void> {
+  const { data, error } = await supabase.rpc("delete_photo", {
+    p_id: photo.id,
+    p_uploader: uploaderName,
+  });
+  if (error) throw new Error(error.message);
+  if (data === null) throw new Error("אפשר למחוק רק תמונות שהועלו בשם שלך");
+
+  // Best effort: the row is gone, so the file is now an orphan and removable.
+  await supabase.storage.from(PHOTOS_BUCKET).remove([data as string]);
+}
+
 /** Subscribe to live inserts/updates. Returns an unsubscribe function. */
 export function subscribePhotos(handlers: {
   onInsert: (photo: Photo) => void;

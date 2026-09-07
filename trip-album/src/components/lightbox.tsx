@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Avatar } from "./avatar";
-import { ChevronLeft, ChevronRight, Download, Heart, Share, X } from "./icons";
+import { ChevronLeft, ChevronRight, Download, Heart, Share, Trash, X } from "./icons";
 import { Media } from "./media";
 import { useToast } from "./toast";
 import { formatFullDate } from "@/lib/format";
@@ -14,12 +14,16 @@ export function Lightbox({
   onClose,
   onNavigate,
   onToggleFavorite,
+  canDelete,
+  onDelete,
 }: {
   photos: Photo[];
   index: number;
   onClose: () => void;
   onNavigate: (next: number) => void;
   onToggleFavorite: (photo: Photo) => void;
+  canDelete?: (photo: Photo) => boolean;
+  onDelete?: (photo: Photo) => void;
 }) {
   const toast = useToast();
   const photo = photos[index];
@@ -109,6 +113,17 @@ export function Lightbox({
           <button type="button" className="icon-btn" onClick={share} aria-label="שיתוף">
             <Share />
           </button>
+          {onDelete && canDelete?.(photo) && (
+            <button
+              type="button"
+              className="icon-btn hover:!bg-rose-500"
+              onClick={() => onDelete(photo)}
+              aria-label="מחיקה"
+              title="מחיקה"
+            >
+              <Trash />
+            </button>
+          )}
           <a className="icon-btn" href={photo.url} download target="_blank" rel="noreferrer" aria-label="הורדה">
             <Download />
           </a>

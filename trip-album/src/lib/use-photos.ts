@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { fetchPhotos, setFavorite, subscribePhotos } from "./photos";
+import { deletePhoto, fetchPhotos, setFavorite, subscribePhotos } from "./photos";
 import type { Photo } from "./types";
 
 export function usePhotos(options?: { onLiveInsert?: (p: Photo) => void }) {
@@ -57,5 +57,19 @@ export function usePhotos(options?: { onLiveInsert?: (p: Photo) => void }) {
     }
   }, []);
 
-  return { photos, error, freshIds, toggleFavorite };
+  const removePhoto = useCallback(async (photo: Photo, uploaderName: string) => {
+    setPhotos((prev) => prev?.filter((p) => p.id !== photo.id) ?? prev);
+    try {
+      await deletePhoto(photo, uploaderName);
+    } catch (e) {
+      // Put it back where it was (newest first ordering).
+      setPhotos((prev) => {
+        if (!prev || prev.some((p) => p.id === photo.id)) return prev;
+        return [...prev, photo].sort((a, b) => b.created_at.localeCompare(a.created_at));
+      });
+      throw e;
+    }
+  }, []);
+
+  return { photos, error, freshIds, toggleFavorite, removePhoto };
 }
