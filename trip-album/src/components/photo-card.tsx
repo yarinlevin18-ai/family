@@ -1,7 +1,7 @@
 "use client";
 
 import { Avatar } from "./avatar";
-import { Heart, Play } from "./icons";
+import { Heart, Play, Trash } from "./icons";
 import { Media } from "./media";
 import { formatWhen } from "@/lib/format";
 import type { Photo } from "@/lib/types";
@@ -11,12 +11,15 @@ export function PhotoCard({
   index,
   onOpen,
   onToggleFavorite,
+  onDelete,
   fresh = false,
 }: {
   photo: Photo;
   index: number;
   onOpen: () => void;
   onToggleFavorite: () => void;
+  /** Present only when the viewer may delete this photo. */
+  onDelete?: () => void;
   fresh?: boolean;
 }) {
   return (
@@ -53,6 +56,21 @@ export function PhotoCard({
         <span className="absolute start-3 top-3 rounded-full bg-emerald-400 px-2.5 py-1 text-[11px] font-extrabold text-ink shadow-lg">
           חדש!
         </span>
+      )}
+
+      {onDelete && !fresh && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+          aria-label="מחיקת התמונה"
+          title="מחיקה"
+          className="icon-btn absolute start-3 top-3 h-9 w-9 text-white/80 opacity-70 transition hover:!bg-rose-500 hover:text-white hover:opacity-100 focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+        >
+          <Trash width={16} height={16} />
+        </button>
       )}
 
       <button
