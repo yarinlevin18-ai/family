@@ -7,7 +7,14 @@ import { burstConfetti } from "@/components/confetti";
 import { Check, Alert, Spinner, Trash, Upload, Grid, Video } from "@/components/icons";
 import { useToast } from "@/components/toast";
 import { formatBytes, mediaTypeOf } from "@/lib/format";
-import { NetworkError, loadSavedName, saveName, uploadPhoto } from "@/lib/photos";
+import {
+  MAX_UPLOAD_BYTES,
+  NetworkError,
+  TooLargeError,
+  loadSavedName,
+  saveName,
+  uploadPhoto,
+} from "@/lib/photos";
 
 type Item = {
   id: string;
@@ -18,7 +25,16 @@ type Item = {
   error?: string;
 };
 
-const CONCURRENCY = 2;
+const LARGE_FILE = 12 * 1024 * 1024;
+
+/**
+ * Files go up exactly as they came off the camera — never resized or re-encoded.
+ * Big originals therefore take longer, so they go one at a time: parallel
+ * uploads of large files are what phones choke on.
+ */
+function concurrencyFor(files: File[]) {
+  return files.some((f) => f.size > LARGE_FILE) ? 1 : 2;
+}
 
 export default function UploadPage() {
   const toast = useToast();
@@ -79,13 +95,18 @@ export default function UploadPage() {
   function addFiles(files: File[]) {
     setItems((prev) => [
       ...prev,
-      ...files.map((file) => ({
-        id: crypto.randomUUID(),
-        file,
-        preview: URL.createObjectURL(file),
-        caption: "",
-        status: "pending" as const,
-      })),
+      ...files.map((file) => {
+        const tooLarge = file.size > MAX_UPLOAD_BYTES;
+        return {
+          id: crypto.randomUUID(),
+          file,
+          preview: URL.createObjectURL(file),
+          caption: "",
+          // Flagged up front rather than after a long upload that cannot succeed.
+          status: (tooLarge ? "error" : "pending") as Item["status"],
+          error: tooLarge ? new TooLargeError().message : undefined,
+        };
+      }),
     ]);
   }
 
@@ -107,7 +128,10 @@ export default function UploadPage() {
     saveName(uploader);
     setBusy(true);
 
-    const queue = items.filter((i) => i.status === "pending" || i.status === "error");
+    const queue = items.filter(
+      (i) => (i.status === "pending" || i.status === "error") && i.file.size <= MAX_UPLOAD_BYTES
+    );
+    const workers = concurrencyFor(queue.map((i) => i.file));
     let ok = 0;
     let failed = 0;
 
@@ -129,7 +153,7 @@ export default function UploadPage() {
         }
       }
     }
-    await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+    await Promise.all(Array.from({ length: workers }, worker));
 
     setBusy(false);
     if (ok > 0 && failed === 0) {
@@ -279,7 +303,9 @@ export default function UploadPage() {
       </section>
 
       <p className="mt-5 text-center text-xs text-mist-3">
-        טיפ: השאירו את המסך דלוק עד שההעלאה מסתיימת. אם החיבור נופל, האפליקציה ממתינה ומנסה שוב לבד.
+        הקבצים נשמרים באיכות המקורית שלהם, בלי דחיסה ובלי הקטנה. לכן העלאה של סרטונים
+        ותמונות גדולות לוקחת יותר זמן — משאירים את המסך דלוק, ואם החיבור נופל האפליקציה
+        ממתינה ומנסה שוב לבד.
       </p>
     </div>
   );

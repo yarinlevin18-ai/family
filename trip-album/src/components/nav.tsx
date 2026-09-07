@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Grid, Play, Upload } from "./icons";
+import { Grid, Play, Sparkles, Upload } from "./icons";
 
 const LINKS = [
   { href: "/gallery", label: "הגלריה", icon: Grid },
   { href: "/slideshow", label: "מצגת", icon: Play },
+  { href: "/duplicates", label: "כפולים", icon: Sparkles },
   { href: "/upload", label: "העלאה", icon: Upload },
 ] as const;
 

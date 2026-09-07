@@ -11,6 +11,8 @@ Next.js (App Router, TypeScript, Tailwind) + Supabase shared photo/video album. 
 - Full-screen slideshow with Ken Burns motion, favorites-only mode, shuffle, and videos that play through.
 - Realtime: new uploads and favorite changes appear on every open client without a refresh.
 - Delete your own photos: the trash button appears only on photos uploaded under the name saved on this device, and asks for confirmation.
+- Duplicate review at `/duplicates`: photos of the same moment are grouped so you can pick the keeper. Nothing is deleted.
+- Originals only: files are stored exactly as they came off the camera, never resized or re-encoded.
 
 ## Live Supabase project
 
@@ -24,6 +26,14 @@ Migrations `0001_photos.sql`, `0002_captions_realtime.sql` and `0003_delete_phot
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `sb_publishable_iDSeFwvNBfzt2aUn6amSLg_pRyT6XL9` |
 
 The publishable key is safe to ship to the browser; row-level security and the bucket policies are what limit what it can do.
+
+## Quality
+
+Uploads are the original files: no compression, no resizing, no re-encoding, and the gallery serves
+those same files rather than optimized derivatives. The cost is time, which the uploader is built
+to absorb: files larger than 12MB upload one at a time instead of two, each step retries on network
+drops, and a screen wake lock keeps a long batch alive. Supabase storage refuses anything over 50MB,
+so oversized files are flagged in the picker rather than shrunk to fit.
 
 ## Local run
 
@@ -42,6 +52,23 @@ The publishable key is safe to ship to the browser; row-level security and the b
 - `/upload` — multi-file uploader. Each file goes to the `photos` bucket, then a row is inserted into `photos`.
 - `/gallery` — filterable masonry grid of `photos`, newest first, with lightbox and favorite toggle.
 - `/slideshow` — full-screen auto-advancing slideshow.
+
+## Duplicates
+
+`/duplicates` groups photos of the same moment so the family can choose the best one. Two signals feed it:
+
+- **Byte-identical files** are found with no download at all. Storage already records each object's
+  size and checksum, exposed by the `photo_files` view.
+- **Near-identical images** (burst shots, the same scene twice) are found with a 64-bit perceptual
+  hash stored in `photos.phash`. New uploads are hashed in the browser before upload; existing
+  photos are hashed by the scan button on the page, which is resumable and skips anything already
+  hashed. Two photos join a group when at most 8 of the 64 bits differ.
+
+Choosing a keeper sets `is_pick` on that row and clears it on the rest of the group. No row and no
+file is ever removed here. The gallery's "כווץ כפולים" toggle then shows one card per group with a
+`+N` badge; turning it off shows every photo again.
+
+Hashing decodes a 9x8 copy in memory. The stored file is never touched.
 
 ## Deleting
 

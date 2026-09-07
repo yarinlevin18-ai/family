@@ -1,6 +1,8 @@
 import { supabase, PHOTOS_BUCKET } from "./supabase";
 import { PHOTO_COLUMNS, type Photo } from "./types";
 import { mediaTypeOf, safeFileName } from "./format";
+import { perceptualHash } from "./hash";
+import type { FileMeta } from "./groups";
 
 export async function fetchPhotos(): Promise<Photo[]> {
   const { data, error } = await supabase
@@ -17,6 +19,19 @@ export async function setFavorite(id: string, value: boolean) {
     .update({ is_favorite: value })
     .eq("id", id);
   if (error) throw new Error(error.message);
+}
+
+/**
+ * Supabase storage rejects anything larger than this. Files are uploaded exactly
+ * as they came off the camera, so we never shrink one to fit: we say so instead.
+ */
+export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+
+export class TooLargeError extends Error {
+  constructor() {
+    super("הקובץ גדול מ‑50MB, מעבר למה שהאחסון מאפשר");
+    this.name = "TooLargeError";
+  }
 }
 
 export class NetworkError extends Error {
@@ -68,7 +83,12 @@ export async function uploadPhoto(
   uploaderName: string,
   caption: string
 ): Promise<Photo> {
+  if (file.size > MAX_UPLOAD_BYTES) throw new TooLargeError();
+
   const path = `${Date.now()}-${crypto.randomUUID()}-${safeFileName(file.name)}`;
+  const type = mediaTypeOf(file);
+  // Hashing reads a scaled copy in memory; `file` itself is uploaded untouched.
+  const phash = type === "image" ? await perceptualHash(file) : null;
 
   await withRetry(async () => {
     const { error } = await supabase.storage
@@ -88,13 +108,39 @@ export async function uploadPhoto(
         uploader_name: uploaderName,
         url: publicUrl,
         caption: caption.trim() || null,
-        media_type: mediaTypeOf(file),
+        media_type: type,
+        phash,
       })
       .select(PHOTO_COLUMNS)
       .single();
     if (error) throw new Error(error.message);
     return data as Photo;
   });
+}
+
+/** Sizes and checksums of the stored files, for exact-duplicate detection. */
+export async function fetchFileMeta(): Promise<Map<string, FileMeta>> {
+  const { data, error } = await supabase.from("photo_files").select("id, bytes, etag");
+  if (error) throw new Error(error.message);
+  return new Map(
+    (data ?? []).map((r) => [r.id as string, { bytes: r.bytes as number | null, etag: r.etag as string | null }])
+  );
+}
+
+export async function savePhash(id: string, phash: string) {
+  const { error } = await supabase.from("photos").update({ phash }).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+/** Mark one photo as the keeper of its group; the others in `groupIds` lose the mark. */
+export async function setPick(pickId: string, groupIds: string[]) {
+  const others = groupIds.filter((id) => id !== pickId);
+  if (others.length) {
+    const { error } = await supabase.from("photos").update({ is_pick: false }).in("id", others);
+    if (error) throw new Error(error.message);
+  }
+  const { error } = await supabase.from("photos").update({ is_pick: true }).eq("id", pickId);
+  if (error) throw new Error(error.message);
 }
 
 /**

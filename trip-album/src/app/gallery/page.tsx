@@ -4,11 +4,13 @@ import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Avatar } from "@/components/avatar";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { Heart, ImageIcon, Play, Search, Upload, Video, X } from "@/components/icons";
+import { Heart, ImageIcon, Play, Search, Sparkles, Upload, Video, X } from "@/components/icons";
 import { Lightbox } from "@/components/lightbox";
 import { PhotoCard } from "@/components/photo-card";
 import { useToast } from "@/components/toast";
 import { usePhotos } from "@/lib/use-photos";
+import { buildGroups, collapse, type FileMeta } from "@/lib/groups";
+import { fetchFileMeta } from "@/lib/photos";
 import { loadSavedName } from "@/lib/photos";
 import type { Photo } from "@/lib/types";
 
@@ -33,6 +35,8 @@ export default function GalleryPage() {
   const [oldestFirst, setOldestFirst] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [myName, setMyName] = useState("");
+  const [collapseDupes, setCollapseDupes] = useState(true);
+  const [files, setFiles] = useState<Map<string, FileMeta>>(new Map());
   const [toDelete, setToDelete] = useState<Photo | null>(null);
   const [deleting, setDeleting] = useState(false);
   const deferredQuery = useDeferredValue(query.trim().toLowerCase());
@@ -43,6 +47,10 @@ export default function GalleryPage() {
     setMyName(loadSavedName().trim());
   }, []);
 
+  useEffect(() => {
+    fetchFileMeta().then(setFiles).catch(() => {});
+  }, []);
+
   const isMine = (p: Photo) => myName.length > 0 && p.uploader_name === myName;
 
   const uploaders = useMemo(() => {
@@ -51,9 +59,13 @@ export default function GalleryPage() {
     return [...counts.entries()].sort((a, b) => b[1] - a[1]);
   }, [photos]);
 
+  const groups = useMemo(() => buildGroups(photos ?? [], files), [photos, files]);
+  const collapsed = useMemo(() => collapse(photos ?? [], groups), [photos, groups]);
+  const duplicateCount = groups.reduce((n, g) => n + g.photos.length - 1, 0);
+
   const visible = useMemo(() => {
     if (!photos) return [];
-    let list = photos;
+    let list = collapseDupes ? collapsed.photos : photos;
     if (filter === "favorites") list = list.filter((p) => p.is_favorite);
     else if (filter !== "all") list = list.filter((p) => p.media_type === filter);
     if (uploader) list = list.filter((p) => p.uploader_name === uploader);
@@ -65,7 +77,7 @@ export default function GalleryPage() {
       );
     }
     return oldestFirst ? [...list].reverse() : list;
-  }, [photos, filter, uploader, deferredQuery, oldestFirst]);
+  }, [photos, collapsed, collapseDupes, filter, uploader, deferredQuery, oldestFirst]);
 
   const openIndex = openId ? visible.findIndex((p) => p.id === openId) : -1;
 
@@ -104,6 +116,11 @@ export default function GalleryPage() {
             <span className="inline-block h-2 w-2 animate-pulse-dot rounded-full bg-emerald-400" />
             עדכון חי · {photos ? `${photos.length} רגעים` : "טוען…"}
             {favorites > 0 && ` · ${favorites} מועדפים`}
+            {duplicateCount > 0 && (
+              <Link href="/duplicates" className="underline decoration-dotted">
+                {duplicateCount} כפולים
+              </Link>
+            )}
           </p>
         </div>
         <div className="flex gap-2">
@@ -143,6 +160,18 @@ export default function GalleryPage() {
                 {label}
               </button>
             ))}
+            {duplicateCount > 0 && (
+              <button
+                type="button"
+                className="chip"
+                data-active={collapseDupes}
+                onClick={() => setCollapseDupes((v) => !v)}
+                title="קיבוץ תמונות מאותו רגע לכרטיס אחד"
+              >
+                <Sparkles width={14} height={14} />
+                כווץ כפולים
+              </button>
+            )}
             <button
               type="button"
               className="chip"
@@ -229,6 +258,7 @@ export default function GalleryPage() {
               photo={photo}
               index={i}
               fresh={freshIds.has(photo.id)}
+              stackCount={collapseDupes ? collapsed.groupOf(photo.id)?.photos.length : undefined}
               onOpen={() => setOpenId(photo.id)}
               onToggleFavorite={() => onToggle(photo)}
               onDelete={isMine(photo) ? () => setToDelete(photo) : undefined}
